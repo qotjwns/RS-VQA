@@ -1,5 +1,6 @@
 ﻿import argparse
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -15,21 +16,23 @@ from transformers import AutoModel, AutoTokenizer
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
 CDVQA_DIR = DATA_DIR / "CDVQA-main"
-SECOND_DIR = DATA_DIR / "SECOND_dataset"
+SECOND_DIR = DATA_DIR / "SECOND_train_set"
+TEST_DIR = DATA_DIR / "test"
 
 MODEL_NAME = "OpenGVLab/InternVL3_5-14B"
-CACHE_DIR = r"D:\models\huggingface"
+CACHE_DIR = os.getenv("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run CDVQA Test local inference.")
+    parser = argparse.ArgumentParser(description="Run CDVQA Test inference.")
     parser.add_argument("--question-id", type=int, default=None)
     parser.add_argument("--num-images", type=int, default=1)
     parser.add_argument("--start-image-id", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--local-files-only", type=bool, default=False)
     return parser.parse_args()
 
 
@@ -175,7 +178,7 @@ def main() -> None:
         trust_remote_code=True,
         device_map="auto" if device == "cuda" else None,
         cache_dir=CACHE_DIR,
-        local_files_only=True,
+        local_files_only=args.local_files_only,
     ).eval()
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -183,7 +186,7 @@ def main() -> None:
         trust_remote_code=True,
         use_fast=False,
         cache_dir=CACHE_DIR,
-        local_files_only=True,
+        local_files_only=args.local_files_only,
     )
 
     if tokenizer.pad_token_id is None:
