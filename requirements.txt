@@ -1,0 +1,12 @@
+torch
+torchvision
+transformers
+accelerate
+huggingface_hub
+hf_transfer
+pillow
+timm
+einops
+sentencepiece
+protobuf
+safetensors
