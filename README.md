@@ -14,18 +14,15 @@ RS-VQA/
 └── README.md
 ```
 
-## 설치
+## 의존성 설치
 
 ```bash
-python -m venv venv
-source .venv/bin/activate
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 ## 모델 다운로드
 
-아래 스크립트는 `OpenGVLab/InternVL3_5-8B-HF` 모델을 Hugging Face 캐시에 내려받습니다.
+아래 스크립트는 `InternVL3_5-8B` 모델을 내려받습니다.
 
 ```bash
 python load_model.py
