@@ -11,3 +11,5 @@ sentencepiece
 protobuf
 safetensors
 gdown
+matplotlib
+tqdm
