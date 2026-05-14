@@ -4,15 +4,11 @@ import csv
 import json
 from pathlib import Path
 
+import hydra
+from omegaconf import DictConfig
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = REPO_ROOT / "outputs" / "building_count_test"
-PREDICTIONS_JSONL = OUTPUT_DIR / "test_predictions.jsonl"
-PREDICTIONS_CSV = OUTPUT_DIR / "test_predictions.csv"
-SUMMARY_CSV = OUTPUT_DIR / "test_bucket_summary.csv"
-SUMMARY_MD = OUTPUT_DIR / "test_bucket_summary.md"
-PLOT_PATH = OUTPUT_DIR / "test_bucket_performance.png"
-TITLE = "internVL3.5-8B"
 BUCKETS = [
     ("0", 0, 0),
     ("1", 1, 1),
@@ -21,6 +17,13 @@ BUCKETS = [
     ("11-20", 11, 20),
     ("21+", 21, None),
 ]
+
+
+def repo_path(path: str | Path) -> Path:
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
 
 
 def load_predictions(path: Path) -> list[dict]:
@@ -35,6 +38,8 @@ def load_predictions(path: Path) -> list[dict]:
 def save_predictions_csv(path: Path, rows: list[dict]) -> None:
     fieldnames = [
         "index",
+        "model",
+        "model_id",
         "image_a",
         "image_b",
         "gt",
@@ -45,7 +50,7 @@ def save_predictions_csv(path: Path, rows: list[dict]) -> None:
         "elapsed_sec",
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -87,24 +92,6 @@ def save_summary_csv(path: Path, summary: list[dict]) -> None:
         )
         writer.writeheader()
         writer.writerows(summary)
-
-
-def save_summary_markdown(path: Path, summary: list[dict]) -> None:
-    lines = [
-        "| GT bucket | n | Strict accuracy | MAE | Invalid |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for row in summary:
-        lines.append(
-            "| {bucket} | {n} | {acc:.2f}% | {mae:.2f} | {invalid} |".format(
-                bucket=row["bucket"],
-                n=row["n"],
-                acc=row["strict_accuracy"] * 100,
-                mae=row["mae"],
-                invalid=row["invalid"],
-            )
-        )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
@@ -152,23 +139,29 @@ def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
     plt.close(fig)
 
 
-def main() -> None:
-    if not PREDICTIONS_JSONL.exists():
-        raise FileNotFoundError(f"Prediction file not found: {PREDICTIONS_JSONL}")
+@hydra.main(version_base=None, config_path="configs", config_name="baseline")
+def main(cfg: DictConfig) -> None:
+    output_dir = repo_path(cfg.output.root) / cfg.model.output_name
+    predictions_jsonl = output_dir / cfg.output.predictions_jsonl
+    predictions_csv = output_dir / cfg.output.predictions_csv
+    summary_csv = output_dir / cfg.output.summary_csv
+    plot_path = output_dir / cfg.output.plot_path
 
-    rows = load_predictions(PREDICTIONS_JSONL)
-    save_predictions_csv(PREDICTIONS_CSV, rows)
+    if not predictions_jsonl.exists():
+        raise FileNotFoundError(f"Prediction file not found: {predictions_jsonl}")
+
+    rows = load_predictions(predictions_jsonl)
+    save_predictions_csv(predictions_csv, rows)
 
     summary = summarize_by_bucket(rows)
-    save_summary_csv(SUMMARY_CSV, summary)
-    save_summary_markdown(SUMMARY_MD, summary)
-    draw_bucket_plot(PLOT_PATH, summary, TITLE)
+    save_summary_csv(summary_csv, summary)
+    draw_bucket_plot(plot_path, summary, cfg.model.title)
 
-    print(f"loaded: {PREDICTIONS_JSONL}")
-    print(f"saved: {PREDICTIONS_CSV}")
-    print(f"saved: {SUMMARY_CSV}")
-    print(f"saved: {SUMMARY_MD}")
-    print(f"saved: {PLOT_PATH}")
+    print(f"model: {cfg.model.title}")
+    print(f"loaded: {predictions_jsonl}")
+    print(f"saved: {predictions_csv}")
+    print(f"saved: {summary_csv}")
+    print(f"saved: {plot_path}")
 
 
 if __name__ == "__main__":

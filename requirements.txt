@@ -13,3 +13,4 @@ safetensors
 gdown
 matplotlib
 tqdm
+hydra-core

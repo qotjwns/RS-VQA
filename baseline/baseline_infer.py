@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import hydra
 import torch
+from omegaconf import DictConfig
 from PIL import Image
 from tqdm import tqdm
 from transformers import (
@@ -15,22 +18,7 @@ from transformers import (
     logging as transformers_logging,
 )
 
-
-MODEL_ID = "OpenGVLab/InternVL3_5-8B-HF"
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_ROOT = REPO_ROOT / "data"
-ANNOTATION_PATH = (
-    DATA_ROOT / "coding" / "muti_task_data" / "test_task_data" / "count_build.json"
-)
-OUTPUT_DIR = REPO_ROOT / "outputs" / "building_count_test"
-MAX_NEW_TOKENS = 128
-BATCH_SIZE = 32
-LIMIT = None
-RESUME = True
-QUESTION = (
-    "How many buildings have been changed in these two remote sensing images? "
-    "Answer with only one integer."
-)
 BUCKETS = [
     ("0", 0, 0),
     ("1", 1, 1),
@@ -42,6 +30,18 @@ BUCKETS = [
 
 
 transformers_logging.set_verbosity_error()
+
+
+def suppress_noisy_logs() -> None:
+    for logger_name in ("httpx", "httpcore", "huggingface_hub"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def repo_path(path: str | Path) -> Path:
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,8 @@ def resolve_image_path(path: str, data_root: Path) -> Path:
     return image_path
 
 
-def load_test_building_count(data_root: Path) -> list[TestSample]:
-    with ANNOTATION_PATH.open("r", encoding="utf-8") as f:
+def load_test_building_count(annotation_path: Path, data_root: Path) -> list[TestSample]:
+    with annotation_path.open("r", encoding="utf-8") as f:
         records = json.load(f)
 
     samples: list[TestSample] = []
@@ -115,14 +115,19 @@ def append_jsonl(path: Path, row: dict) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def build_prompt(processor, image_a: Image.Image, image_b: Image.Image) -> str:
+def build_prompt(
+    processor,
+    image_a: Image.Image,
+    image_b: Image.Image,
+    question: str,
+) -> str:
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "image", "image": image_a},
                 {"type": "image", "image": image_b},
-                {"type": "text", "text": QUESTION},
+                {"type": "text", "text": question},
             ],
         }
     ]
@@ -169,6 +174,7 @@ def infer_batch(
     model,
     processor,
     samples: list[TestSample],
+    question: str,
     max_new_tokens: int,
 ) -> list[tuple[str, int | None]]:
     image_pairs = [
@@ -178,7 +184,10 @@ def infer_batch(
         )
         for sample in samples
     ]
-    texts = [build_prompt(processor, image_a, image_b) for image_a, image_b in image_pairs]
+    texts = [
+        build_prompt(processor, image_a, image_b, question)
+        for image_a, image_b in image_pairs
+    ]
     nested_images = [[image_a, image_b] for image_a, image_b in image_pairs]
 
     try:
@@ -225,28 +234,40 @@ def batched(items: list[tuple[int, TestSample]], batch_size: int):
         yield items[start : start + batch_size]
 
 
-def main() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+@hydra.main(version_base=None, config_path="configs", config_name="baseline")
+def main(cfg: DictConfig) -> None:
+    suppress_noisy_logs()
 
-    jsonl_path = OUTPUT_DIR / "test_predictions.jsonl"
+    data_root = repo_path(cfg.data.root)
+    annotation_path = repo_path(cfg.data.annotation_path)
+    output_dir = repo_path(cfg.output.root) / cfg.model.output_name
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    samples = load_test_building_count(data_root=DATA_ROOT)
-    if LIMIT is not None:
-        samples = samples[:LIMIT]
+    jsonl_path = output_dir / cfg.output.predictions_jsonl
 
-    done = load_done(jsonl_path) if RESUME else {}
+    samples = load_test_building_count(
+        annotation_path=annotation_path,
+        data_root=data_root,
+    )
+    if cfg.inference.limit is not None:
+        samples = samples[: cfg.inference.limit]
+
+    done = load_done(jsonl_path) if cfg.inference.resume else {}
+    print(f"model: {cfg.model.title}")
+    print(f"model id: {cfg.model.model_id}")
+    print(f"output dir: {output_dir}")
     print(f"test samples: {len(samples)}")
     print(f"already predicted: {len(done)}")
 
-    if not RESUME and jsonl_path.exists():
+    if not cfg.inference.resume and jsonl_path.exists():
         jsonl_path.unlink()
 
     print("Loading processor...")
-    processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(cfg.model.model_id, trust_remote_code=True)
 
     print("Loading model...")
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_ID,
+        cfg.model.model_id,
         dtype=torch.bfloat16,
         device_map="auto",
         tie_word_embeddings=False,
@@ -266,7 +287,7 @@ def main() -> None:
         unit="sample",
     )
 
-    for batch in batched(pending, BATCH_SIZE):
+    for batch in batched(pending, cfg.inference.batch_size):
         batch_started = time.time()
         batch_indices = [index for index, _ in batch]
         batch_samples = [sample for _, sample in batch]
@@ -274,7 +295,8 @@ def main() -> None:
             model=model,
             processor=processor,
             samples=batch_samples,
-            max_new_tokens=MAX_NEW_TOKENS,
+            question=cfg.question,
+            max_new_tokens=cfg.inference.max_new_tokens,
         )
         elapsed_per_sample = (time.time() - batch_started) / len(batch)
 
@@ -286,6 +308,8 @@ def main() -> None:
             gt = int(sample.answer)
             row = {
                 "index": index,
+                "model": cfg.model.key,
+                "model_id": cfg.model.model_id,
                 "image_a": sample.image_a,
                 "image_b": sample.image_b,
                 "gt": gt,

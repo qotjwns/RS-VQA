@@ -1,0 +1,29 @@
+defaults:
+  - model: 14b
+  - _self_
+
+data:
+  root: data
+  annotation_path: data/coding/muti_task_data/test_task_data/count_build.json
+
+output:
+  root: outputs/building_count_test
+  predictions_jsonl: test_predictions.jsonl
+  predictions_csv: test_predictions.csv
+  summary_csv: test_bucket_summary.csv
+  plot_path: test_bucket_performance.png
+
+inference:
+  max_new_tokens: 128
+  batch_size: 32
+  limit: null
+  resume: true
+
+question: "How many buildings have been changed in these two remote sensing images? Answer with only one integer."
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: .
+  output_subdir: null

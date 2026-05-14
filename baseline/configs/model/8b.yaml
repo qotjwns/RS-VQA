@@ -1,0 +1,4 @@
+key: "8b"
+model_id: "OpenGVLab/InternVL3_5-8B-HF"
+title: "InternVL3.5-8B"
+output_name: "internvl3_5_8b"
