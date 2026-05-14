@@ -1,12 +1,10 @@
 from __future__ import annotations
-
 import json
 import logging
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-
 import hydra
 import torch
 from omegaconf import DictConfig
@@ -17,40 +15,24 @@ from transformers import (
     AutoProcessor,
     logging as transformers_logging,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-BUCKETS = [
-    ("0", 0, 0),
-    ("1", 1, 1),
-    ("2-5", 2, 5),
-    ("6-10", 6, 10),
-    ("11-20", 11, 20),
-    ("21+", 21, None),
-]
+from common import *
 
 
 transformers_logging.set_verbosity_error()
 
-
+# httpx, httpcore, huggingface_hub 등에서 나오는 불필요한 로그 출력 삭제
 def suppress_noisy_logs() -> None:
     for logger_name in ("httpx", "httpcore", "huggingface_hub"):
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
-
-
+# 하나의 테스트 샘플에서 사용할 두 이미지 경로와 정답을 저장하는 데이터 클래스
 @dataclass(frozen=True)
 class TestSample:
     image_a: str
     image_b: str
     answer: str
 
-
+# 이미지 경로를 실제 존재하는 경로로 변환하고, 찾을 수 없으면 오류를 발생
 def resolve_image_path(path: str, data_root: Path) -> Path:
     image_path = Path(path)
     if image_path.exists():
@@ -66,7 +48,7 @@ def resolve_image_path(path: str, data_root: Path) -> Path:
 
     return image_path
 
-
+# annotation JSON 파일을 읽어 두 이미지 경로와 정답으로 구성된 테스트 샘플 리스트를 만든다.
 def load_test_building_count(annotation_path: Path, data_root: Path) -> list[TestSample]:
     with annotation_path.open("r", encoding="utf-8") as f:
         records = json.load(f)
@@ -83,38 +65,14 @@ def load_test_building_count(annotation_path: Path, data_root: Path) -> list[Tes
         )
     return samples
 
-
+# 모델 출력 문자열에서 처음 등장하는 정수를 추출하고, 정수가 없으면 None을 반환
 def parse_first_int(text: str) -> int | None:
     match = re.search(r"-?\d+", text)
     if match is None:
         return None
     return int(match.group(0))
 
-
-def bucket_name(value: int) -> str:
-    for name, low, high in BUCKETS:
-        if value >= low and (high is None or value <= high):
-            return name
-    raise ValueError(f"Cannot bucket value: {value}")
-
-
-def load_done(path: Path) -> dict[int, dict]:
-    if not path.exists():
-        return {}
-
-    done: dict[int, dict] = {}
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            row = json.loads(line)
-            done[int(row["index"])] = row
-    return done
-
-
-def append_jsonl(path: Path, row: dict) -> None:
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
+# 두 이미지와 질문을 모델이 이해할 수 있는 chat prompt 형식으로 변환
 def build_prompt(
     processor,
     image_a: Image.Image,
@@ -137,20 +95,20 @@ def build_prompt(
         add_generation_prompt=True,
     )
 
-
+# processor가 만든 입력 텐서를 모델이 올라간 device로 이동시
 def move_to_model_device(inputs: dict, model) -> dict:
     return {
         key: value.to(model.device) if torch.is_tensor(value) else value
         for key, value in inputs.items()
     }
 
-
+# token_id가 리스트나 튜플이면 첫 번째 값을 반환하고, 아니면 그대로 반환
 def first_token_id(token_id) -> int | None:
     if isinstance(token_id, (list, tuple)):
         return token_id[0] if token_id else None
     return token_id
 
-
+# generation에 사용할 pad_token_id를 tokenizer나 model config에서 찾아 설정
 def configure_generation_tokens(model, processor) -> int | None:
     tokenizer = getattr(processor, "tokenizer", None)
     pad_token_id = getattr(tokenizer, "pad_token_id", None)
@@ -169,7 +127,7 @@ def configure_generation_tokens(model, processor) -> int | None:
 
     return pad_token_id
 
-
+# 여러 테스트 샘플을 batch 단위로 모델에 입력하고, 원본 출력과 추출된 정수 예측값을 반환
 def infer_batch(
     model,
     processor,
@@ -228,12 +186,12 @@ def infer_batch(
 
     return [(output.strip(), parse_first_int(output)) for output in outputs]
 
-
+# 전체 샘플 리스트를 지정한 batch_size 크기만큼 나누어 반환
 def batched(items: list[tuple[int, TestSample]], batch_size: int):
     for start in range(0, len(items), batch_size):
         yield items[start : start + batch_size]
 
-
+# Hydra 설정을 기반으로 모델과 데이터를 불러오고, building count 테스트 추론 결과를 JSONL 파일로 저장
 @hydra.main(version_base=None, config_path="configs", config_name="baseline")
 def main(cfg: DictConfig) -> None:
     suppress_noisy_logs()
@@ -252,7 +210,7 @@ def main(cfg: DictConfig) -> None:
     if cfg.inference.limit is not None:
         samples = samples[: cfg.inference.limit]
 
-    done = load_done(jsonl_path) if cfg.inference.resume else {}
+    done = index_rows(load_jsonl(jsonl_path)) if cfg.inference.resume else {}
     print(f"model: {cfg.model.title}")
     print(f"model id: {cfg.model.model_id}")
     print(f"output dir: {output_dir}")

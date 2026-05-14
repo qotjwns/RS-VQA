@@ -15,8 +15,8 @@ from transformers import (
 
 
 # Edit these globals for a quick one-pair test.
-MODEL_ID = "OpenGVLab/InternVL3_5-8B-HF"
-SAMPLE_INDEX = 0
+MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
+SAMPLE_INDEX = 210
 MAX_NEW_TOKENS = 128
 USE_RAW_QUESTION_FOR_PROMPT = False
 PROMPT_QUESTION = (

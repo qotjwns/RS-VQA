@@ -1,60 +1,27 @@
 from __future__ import annotations
-
 import csv
-import json
 from pathlib import Path
-
 import hydra
 from omegaconf import DictConfig
+from common import *
 
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-BUCKETS = [
-    ("0", 0, 0),
-    ("1", 1, 1),
-    ("2-5", 2, 5),
-    ("6-10", 6, 10),
-    ("11-20", 11, 20),
-    ("21+", 21, None),
-]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
-
-
+# JSONL 예측 결과를 불러온 뒤 index 기준으로 정렬
 def load_predictions(path: Path) -> list[dict]:
-    rows = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            rows.append(json.loads(line))
-
+    rows = load_jsonl(path)
     return sorted(rows, key=lambda row: int(row["index"]))
 
-
+# 예측 결과 리스트를 CSV 파일로 저장
 def save_predictions_csv(path: Path, rows: list[dict]) -> None:
-    fieldnames = [
-        "index",
-        "model",
-        "model_id",
-        "image_a",
-        "image_b",
-        "gt",
-        "pred",
-        "correct",
-        "bucket",
-        "raw_output",
-        "elapsed_sec",
-    ]
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(
+            f,
+            fieldnames=PREDICTION_FIELDNAMES,
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
-
+# GT 값을 bucket 범위별로 나누어 샘플 수, 정확도, MAE, invalid 개수를 계산
 def summarize_by_bucket(rows: list[dict]) -> list[dict]:
     summary = []
     for name, low, high in BUCKETS:
@@ -83,7 +50,7 @@ def summarize_by_bucket(rows: list[dict]) -> list[dict]:
         )
     return summary
 
-
+# bucket별 성능 요약 결과를 CSV 파일로 저장
 def save_summary_csv(path: Path, summary: list[dict]) -> None:
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
@@ -93,7 +60,7 @@ def save_summary_csv(path: Path, summary: list[dict]) -> None:
         writer.writeheader()
         writer.writerows(summary)
 
-
+# bucket별 strict accuracy와 MAE를 막대그래프로 시각화하여 이미지 파일로 저장
 def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
     import matplotlib.pyplot as plt
 
@@ -138,7 +105,7 @@ def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
     fig.savefig(path, dpi=200)
     plt.close(fig)
 
-
+# Hydra 설정을 불러와 예측 결과를 CSV, summary CSV, 성능 그래프로 변환하는 전체 평가 후처리 과정을 실행
 @hydra.main(version_base=None, config_path="configs", config_name="baseline")
 def main(cfg: DictConfig) -> None:
     output_dir = repo_path(cfg.output.root) / cfg.model.output_name
