@@ -22,8 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--size",
         choices=list(MODEL_IDS.keys()),
-        default="9",
-        help="Model size to download. Choices: 0.8, 2, 4, 9, 27, 35. Default: 9",
+        default="9b",
+        help="Model size to download. Default: 9b",
     )
     return parser.parse_args()
 
