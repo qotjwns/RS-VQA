@@ -7,22 +7,23 @@
 ```text
 RS-VQA/
 ├── baseline/
-│   ├── baseline_infer.py        # count_build test split 추론, JSONL 저장
-│   ├── baseline_report.py       # JSONL 결과를 CSV/PNG 리포트로 변환
+│   ├── baseline_infer.py       # count_build test split 추론, JSONL 저장
+│   ├── baseline_report.py      # JSONL 결과를 CSV/PNG 리포트로 변환
 │   └── configs/
-│       ├── baseline.yaml        # Hydra 공통 설정
+│       ├── baseline.yaml       # Hydra 공통 설정
 │       └── model/
-│           ├── 8b.yaml          # InternVL3.5-8B 설정
-│           └── 14b.yaml         # InternVL3.5-14B 설정
+│           ├── 1b.yaml         # InternVL3.5-1B 설정
+│           ├── 2b.yaml         # InternVL3.5-2B 설정
+│           └── ...
 ├── model/
-│   ├── download_internVL.py # InternVL 모델 다운로드
-│   └── download_Qwen.py     # Qwen 모델 다운로드
-├── data/                    # 로컬 데이터셋
-├── outputs/                 # 추론/평가 결과
+│   ├── download_internVL.py    # InternVL 모델 다운로드
+│   └── download_Qwen.py        # Qwen 모델 다운로드
+├── data/                       # 로컬 데이터셋
+├── outputs/                    # 추론/평가 결과
 ├── test/
-│   ├── test_infer.py        # 단일 이미지 추론 테스트 파일
-│   └── test.png             # 테스트 이미지
-├── requirements.txt         # 의존성 목록
+│   ├── test_infer.py           # 단일 이미지 추론 테스트 파일
+│   └── test.png                # 테스트 이미지
+├── requirements.txt            # 의존성 목록
 └── README.md
 ```
 
@@ -93,11 +94,12 @@ outputs/building_count_test/
 │   ├── test_predictions.csv
 │   ├── test_bucket_summary.csv
 │   └── test_bucket_performance.png
-└── internvl3_5_14b/
-    ├── test_predictions.jsonl
-    ├── test_predictions.csv
-    ├── test_bucket_summary.csv
-    └── test_bucket_performance.png
+├── internvl3_5_14b/
+│   ├── test_predictions.jsonl
+│   ├── test_predictions.csv
+│   ├── test_bucket_summary.csv
+│   └── test_bucket_performance.png
+└── ...
 ```
 
 `test_predictions.jsonl`은 resume 기준 파일입니다. `inference.resume=true`이면 이미 저장된 `index`는 건너뛰고 이어서 추론합니다.

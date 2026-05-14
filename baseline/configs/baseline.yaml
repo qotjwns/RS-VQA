@@ -1,5 +1,5 @@
 defaults:
-  - model: 14b
+  - model: 1b
   - _self_
 
 data:
