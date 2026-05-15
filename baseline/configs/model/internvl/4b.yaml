@@ -1,4 +1,4 @@
-key: "4b"
+key: "internvl_4b"
 model_id: "OpenGVLab/InternVL3_5-4B-HF"
 title: "InternVL3.5-4B"
 output_name: "internvl3_5_4b"

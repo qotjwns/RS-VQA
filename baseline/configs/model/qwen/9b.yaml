@@ -1,0 +1,4 @@
+key: "qwen_9b"
+model_id: "Qwen/Qwen3.5-9B"
+title: "Qwen3.5-9B"
+output_name: "qwen3_5_9b"

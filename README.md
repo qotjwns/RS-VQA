@@ -13,8 +13,8 @@ RS-VQA/
 │   └── configs/
 │       ├── baseline.yaml       # Hydra 공통 설정
 │       └── model/
-│           ├── 1b.yaml         # InternVL3.5-1B 설정
-│           ├── 2b.yaml         # InternVL3.5-2B 설정
+│           ├── internvl/1b.yaml # InternVL3.5-1B 설정
+│           ├── qwen/4b.yaml     # Qwen3.5-4B 설정
 │           └── ...
 ├── model/
 │   ├── download_internVL.py    # InternVL 모델 다운로드
@@ -60,25 +60,26 @@ python3 model/download_Qwen.py --size 35b
 
 - test: `data/coding/muti_task_data/test_task_data/count_build.json` (1,929개)
 
-기본 설정은 `baseline/configs/baseline.yaml`에 있고, 기본 모델은 `14b`입니다.
+기본 설정은 `baseline/configs/baseline.yaml`에 있고, 기본 모델은 `internvl/1b`입니다.
 
 ### 추론
 
 ```bash
-python3 baseline/baseline_infer.py model=14b
+python3 baseline/baseline_infer.py model=internvl/14b
 ```
 
 8B 모델로 실행:
 
 ```bash
-python3 baseline/baseline_infer.py model=8b
+python3 baseline/baseline_infer.py model=internvl/8b
+python3 baseline/baseline_infer.py model=qwen/4b
 ```
 
 자주 쓰는 override 예시:
 
 ```bash
-python3 baseline/baseline_infer.py model=8b inference.batch_size=4 inference.limit=100
-python3 baseline/baseline_infer.py model=14b inference.resume=false
+python3 baseline/baseline_infer.py model=internvl/8b inference.batch_size=4 inference.limit=100
+python3 baseline/baseline_infer.py model=qwen/4b inference.resume=false
 ```
 
 ### 리포트 생성
@@ -86,8 +87,9 @@ python3 baseline/baseline_infer.py model=14b inference.resume=false
 추론에 사용한 모델과 같은 `model` 값을 넣어 실행합니다.
 
 ```bash
-python3 baseline/baseline_report.py model=14b
-python3 baseline/baseline_report.py model=8b
+python3 baseline/baseline_report.py model=internvl/14b
+python3 baseline/baseline_report.py model=internvl/8b
+python3 baseline/baseline_report.py model=qwen/4b
 ```
 
 ### 출력 파일

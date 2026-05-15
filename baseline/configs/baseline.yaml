@@ -1,5 +1,5 @@
 defaults:
-  - model: 1b
+  - model: internvl/1b
   - _self_
 
 data:

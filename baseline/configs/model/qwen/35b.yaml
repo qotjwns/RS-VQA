@@ -1,0 +1,4 @@
+key: "qwen_35b"
+model_id: "Qwen/Qwen3.5-35B-A3B"
+title: "Qwen3.5-35B-A3B"
+output_name: "qwen3_5_35b"
