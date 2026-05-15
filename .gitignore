@@ -219,11 +219,9 @@ __marimo__/
 
 #data
 data.zip
-<<<<<<< HEAD
 /data
 =======
 /data
 
 #output
 /outputs
->>>>>>> 4f027e5 (FEAT: 베이스라인 추론 코드 설정)
