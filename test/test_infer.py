@@ -3,7 +3,7 @@ from PIL import Image
 from transformers import AutoProcessor, AutoModelForImageTextToText
 
 # 경로 설정
-MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
+MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
 IMAGE_PATH = "/workspace/RS-VQA/test/test.png"
 PROMPT = "Describe this image in detail."
 
