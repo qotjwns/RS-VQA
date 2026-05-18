@@ -1,0 +1,4 @@
+key: "qwen_0_8b"
+model_id: "Qwen/Qwen3.5-0.8B"
+title: "Qwen3.5-0.8B"
+output_name: "qwen3_5_0_8b"

@@ -1,0 +1,33 @@
+defaults:
+  - model: internvl/1b
+  - _self_
+
+data:
+  root: data
+  annotation_path: data/coding/muti_task_data/test_task_data/count_build.json
+
+output:
+  root: outputs/patch_level_building_count_test
+  predictions_jsonl: test_predictions.jsonl
+  predictions_csv: test_predictions.csv
+  summary_csv: test_bucket_summary.csv
+  plot_path: test_bucket_performance.png
+
+inference:
+  max_new_tokens: 128
+  batch_size: 8
+  limit: null
+  resume: true
+
+patch:
+  grid: 2
+  strict_valid_patches: true
+
+question: "How many buildings are visible in this remote sensing image? Answer with only one integer."
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: .
+  output_subdir: null

@@ -1,0 +1,4 @@
+key: "internvl_1b"
+model_id: "OpenGVLab/InternVL3_5-1B-HF"
+title: "InternVL3.5-1B"
+output_name: "internvl3_5_1b"
