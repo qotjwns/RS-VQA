@@ -19,7 +19,7 @@ inference:
   limit: null
   resume: true
 
-question: "How many buildings are visible in this remote sensing image patch? Answer with only one integer."
+question: "How many buildings have been changed in these two remote sensing images? Answer with only one integer."
 
 hydra:
   job:

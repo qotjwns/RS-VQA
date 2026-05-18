@@ -1,10 +1,13 @@
+from pathlib import Path
+
 import torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForImageTextToText
 
 # 경로 설정
-MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
-IMAGE_PATH = "/workspace/RS-VQA/test/test.png"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
+IMAGE_PATH = REPO_ROOT / "test/test.png"
 PROMPT = "Describe this image in detail."
 
 # CUDA 확인

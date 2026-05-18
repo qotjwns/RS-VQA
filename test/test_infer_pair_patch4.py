@@ -15,17 +15,18 @@ from transformers import (
 )
 
 
-# Test-only absolute paths/settings.
-MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Test-only defaults. All paths are resolved from the repository root.
+MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
 SAMPLE_INDEX = 300
 MAX_NEW_TOKENS = 128
 ANNOTATION_PATH = Path(
-    "/Users/baeseojun/RS-VQA/data/coding/muti_task_data/test_task_data/count_build.json"
+    "data/coding/muti_task_data/test_task_data/count_build.json"
 )
-LOCAL_DATA_ROOT = Path("/Users/baeseojun/RS-VQA/data")
-VIS_SAVE_PATH = Path(
-    "/Users/baeseojun/RS-VQA/outputs/patch_debug/test_infer_pair_patch4.png"
-)
+LOCAL_DATA_ROOT = Path("data")
+VIS_SAVE_PATH = Path("outputs/patch_debug/test_infer_pair_patch4.png")
 
 PATCH_GRID = 2  # 2x2 => 4 patches
 PATCH_PROMPT = (
@@ -47,6 +48,13 @@ def parse_first_int(text: str) -> int | None:
     if match is None:
         return None
     return int(match.group(0))
+
+
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
 
 
 def first_token_id(token_id) -> int | None:
@@ -73,21 +81,24 @@ def configure_generation_tokens(model, processor) -> None:
             model.config.pad_token_id = pad_token_id
 
 
-def resolve_image_path(raw_path: str) -> Path:
+def resolve_image_path(raw_path: str, data_root: Path) -> Path:
     image_path = Path(raw_path)
     if image_path.exists():
         return image_path
 
     if image_path.is_absolute() and image_path.parts[1:2] == ("data",):
-        candidate = LOCAL_DATA_ROOT / Path(*image_path.parts[2:])
-        if candidate.exists():
-            return candidate
+        image_path = data_root / Path(*image_path.parts[2:])
+    elif not image_path.is_absolute():
+        image_path = data_root / image_path
 
-    raise FileNotFoundError(f"Image not found: {raw_path}")
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {raw_path}")
+
+    return image_path
 
 
-def load_record(index: int) -> dict:
-    with ANNOTATION_PATH.open("r", encoding="utf-8") as f:
+def load_record(annotation_path: Path, index: int) -> dict:
+    with annotation_path.open("r", encoding="utf-8") as f:
         records = json.load(f)
 
     if index < 0 or index >= len(records):
@@ -219,24 +230,29 @@ def save_patch_figure(
 
 def main() -> None:
     suppress_noisy_logs()
-    record = load_record(SAMPLE_INDEX)
+    annotation_path = repo_path(ANNOTATION_PATH)
+    data_root = repo_path(LOCAL_DATA_ROOT)
+    vis_save_path = repo_path(VIS_SAVE_PATH)
+
+    record = load_record(annotation_path, SAMPLE_INDEX)
     gt_raw_answer = str(record["conversations"][1]["value"]).strip()
     gt = parse_first_int(gt_raw_answer)
 
-    image_a_path = resolve_image_path(record["images"][0])
-    image_b_path = resolve_image_path(record["images"][1])
+    image_a_path = resolve_image_path(record["images"][0], data_root)
+    image_b_path = resolve_image_path(record["images"][1], data_root)
     image_a = Image.open(image_a_path).convert("RGB")
     image_b = Image.open(image_b_path).convert("RGB")
 
     print(f"model_id: {MODEL_ID}")
     print(f"sample_index: {SAMPLE_INDEX}")
-    print(f"annotation_path: {ANNOTATION_PATH}")
+    print(f"annotation_path: {annotation_path}")
+    print(f"data_root: {data_root}")
     print(f"image_a: {image_a_path}")
     print(f"image_b: {image_b_path}")
     print(f"prompt_question: {PATCH_PROMPT}")
     print(f"gt_changed_buildings(raw): {gt_raw_answer}")
     print(f"gt_changed_buildings(parsed): {gt}")
-    print(f"vis_save_path: {VIS_SAVE_PATH}")
+    print(f"vis_save_path: {vis_save_path}")
 
     print("Loading processor...")
     processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
@@ -321,10 +337,10 @@ def main() -> None:
     save_patch_figure(
         patch_results=patch_results,
         gt=gt,
-        save_path=VIS_SAVE_PATH,
+        save_path=vis_save_path,
         sample_index=SAMPLE_INDEX,
     )
-    print(f"saved visualization: {VIS_SAVE_PATH}")
+    print(f"saved visualization: {vis_save_path}")
 
 
 if __name__ == "__main__":

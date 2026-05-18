@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -15,17 +16,20 @@ from transformers import (
 )
 
 
-# Test-only absolute paths/settings.
-MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Test-only defaults. All paths are resolved from the repository root.
+MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
 SAMPLE_INDEX = 300
 MAX_NEW_TOKENS = 128
 ANNOTATION_PATH = Path(
-    "/Users/baeseojun/RS-VQA/data/coding/muti_task_data/test_task_data/count_build.json"
+    "data/coding/muti_task_data/test_task_data/count_build.json"
 )
-LOCAL_DATA_ROOT = Path("/Users/baeseojun/RS-VQA/data")
-VIS_SAVE_PATH = Path("/Users/baeseojun/RS-VQA/outputs/pair_debug/test_infer_pair.png")
-PATCH_PROMPT = (
-    "How many buildings are visible in this remote sensing image? "
+LOCAL_DATA_ROOT = Path("data")
+VIS_SAVE_PATH = Path("outputs/pair_debug/test_infer_pair.png")
+PAIR_PROMPT = (
+    "How many buildings have been changed in these two remote sensing images? "
     "Answer with only one integer."
 )
 
@@ -45,18 +49,27 @@ def parse_first_int(text: str) -> int | None:
     return int(match.group(0))
 
 
-def resolve_image_path(raw_path: str) -> Path:
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def resolve_image_path(raw_path: str, data_root: Path) -> Path:
     image_path = Path(raw_path)
     if image_path.exists():
         return image_path
 
-    # Dataset records often store paths like /data/...; remap to local absolute data root.
     if image_path.is_absolute() and image_path.parts[1:2] == ("data",):
-        candidate = LOCAL_DATA_ROOT / Path(*image_path.parts[2:])
-        if candidate.exists():
-            return candidate
+        image_path = data_root / Path(*image_path.parts[2:])
+    elif not image_path.is_absolute():
+        image_path = data_root / image_path
 
-    raise FileNotFoundError(f"Image not found: {raw_path}")
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {raw_path}")
+
+    return image_path
 
 
 def first_token_id(token_id) -> int | None:
@@ -84,13 +97,21 @@ def configure_generation_tokens(model, processor) -> None:
             model.config.pad_token_id = pad_token_id
 
 
-def load_record(index: int) -> dict:
-    with ANNOTATION_PATH.open("r", encoding="utf-8") as f:
+def load_record(annotation_path: Path, index: int) -> dict:
+    with annotation_path.open("r", encoding="utf-8") as f:
         records = json.load(f)
 
     if index < 0 or index >= len(records):
         raise IndexError(f"SAMPLE_INDEX {index} out of range (total={len(records)})")
     return records[index]
+
+
+def normalize_record_question(record: dict) -> str:
+    question = str(record["conversations"][0]["value"]).strip()
+    question = question.replace("<image>", "").replace("  ", " ").strip()
+    if "Answer with only one integer" not in question:
+        question = f"{question} Answer with only one integer."
+    return question
 
 
 def build_prompt(processor, image_a: Image.Image, image_b: Image.Image, question: str) -> str:
@@ -133,31 +154,55 @@ def save_pair_figure(
     plt.close(fig)
 
 
+def parse_args() -> Namespace:
+    parser = ArgumentParser(description="Run one pair-image RS-VQA inference sample.")
+    parser.add_argument("--model-id", default=MODEL_ID)
+    parser.add_argument("--sample-index", type=int, default=SAMPLE_INDEX)
+    parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
+    parser.add_argument("--annotation-path", type=Path, default=ANNOTATION_PATH)
+    parser.add_argument("--data-root", type=Path, default=LOCAL_DATA_ROOT)
+    parser.add_argument("--vis-save-path", type=Path, default=VIS_SAVE_PATH)
+    parser.add_argument("--question", default=PAIR_PROMPT)
+    parser.add_argument(
+        "--use-record-question",
+        action="store_true",
+        help="Use the question stored in the annotation record instead of --question.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     suppress_noisy_logs()
 
-    record = load_record(SAMPLE_INDEX)
+    annotation_path = repo_path(args.annotation_path)
+    data_root = repo_path(args.data_root)
+    vis_save_path = repo_path(args.vis_save_path)
+
+    record = load_record(annotation_path, args.sample_index)
     gt_raw_answer = str(record["conversations"][1]["value"]).strip()
     gt = parse_first_int(gt_raw_answer)
-    image_a_path = resolve_image_path(record["images"][0])
-    image_b_path = resolve_image_path(record["images"][1])
+    image_a_path = resolve_image_path(record["images"][0], data_root)
+    image_b_path = resolve_image_path(record["images"][1], data_root)
+    question = normalize_record_question(record) if args.use_record_question else args.question
 
-    print(f"model_id: {MODEL_ID}")
-    print(f"sample_index: {SAMPLE_INDEX}")
-    print(f"annotation_path: {ANNOTATION_PATH}")
+    print(f"model_id: {args.model_id}")
+    print(f"sample_index: {args.sample_index}")
+    print(f"annotation_path: {annotation_path}")
+    print(f"data_root: {data_root}")
     print(f"image_a: {image_a_path}")
     print(f"image_b: {image_b_path}")
-    print(f"prompt_question: {PATCH_PROMPT}")
+    print(f"prompt_question: {question}")
     print(f"gt_raw_answer: {gt_raw_answer}")
     print(f"gt(parsed): {gt}")
-    print(f"vis_save_path: {VIS_SAVE_PATH}")
+    print(f"vis_save_path: {vis_save_path}")
 
     print("Loading processor...")
-    processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(args.model_id, trust_remote_code=True)
 
     print("Loading model...")
     model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_ID,
+        args.model_id,
         dtype=torch.bfloat16,
         device_map="auto",
         tie_word_embeddings=False,
@@ -167,7 +212,7 @@ def main() -> None:
 
     image_a = Image.open(image_a_path).convert("RGB")
     image_b = Image.open(image_b_path).convert("RGB")
-    prompt = build_prompt(processor, image_a, image_b, PATCH_PROMPT)
+    prompt = build_prompt(processor, image_a, image_b, question)
 
     try:
         inputs = processor(
@@ -193,7 +238,7 @@ def main() -> None:
     with torch.no_grad():
         generated_ids = model.generate(
             **inputs,
-            max_new_tokens=MAX_NEW_TOKENS,
+            max_new_tokens=args.max_new_tokens,
             do_sample=False,
             pad_token_id=model.generation_config.pad_token_id,
         )
@@ -211,12 +256,12 @@ def main() -> None:
     save_pair_figure(
         image_a=image_a,
         image_b=image_b,
-        save_path=VIS_SAVE_PATH,
-        sample_index=SAMPLE_INDEX,
+        save_path=vis_save_path,
+        sample_index=args.sample_index,
         gt=gt,
         pred=pred,
     )
-    print(f"saved visualization: {VIS_SAVE_PATH}")
+    print(f"saved visualization: {vis_save_path}")
 
 
 if __name__ == "__main__":

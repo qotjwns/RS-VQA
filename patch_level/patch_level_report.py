@@ -224,7 +224,7 @@ def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
         )
 
     axes[1].bar(labels, maes, color="#F94144", edgecolor="black")
-    axes[1].set_title("Mean absolute error by GT bucket")
+    axes[1].set_title("MAE by GT bucket")
     axes[1].set_ylabel("MAE (|pred - gt|)")
     axes[1].grid(axis="y", alpha=0.25)
     max_mae = max(maes) if maes else 0
