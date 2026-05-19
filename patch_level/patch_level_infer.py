@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import json
-import logging
-import re
+import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import hydra
@@ -18,104 +15,28 @@ from transformers import (
     logging as transformers_logging,
 )
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from util import (
+    TestSample,
+    append_jsonl,
+    batched,
+    bucket_name,
+    build_prompt_with_images,
+    configure_generation_tokens,
+    index_rows,
+    load_jsonl,
+    load_test_building_count,
+    move_to_model_device,
+    parse_first_int,
+    repo_path,
+    suppress_http_logs,
+)
+
 
 transformers_logging.set_verbosity_error()
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-BUCKETS = [
-    ("0", 0, 0),
-    ("1", 1, 1),
-    ("2-5", 2, 5),
-    ("6-10", 6, 10),
-    ("11-20", 11, 20),
-    ("21+", 21, None),
-]
-
-
-@dataclass(frozen=True)
-class TestSample:
-    image_a: str
-    image_b: str
-    answer: str
-
-
-def suppress_noisy_logs() -> None:
-    for logger_name in ("httpx", "httpcore", "huggingface_hub"):
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
-
-
-def bucket_name(value: int) -> str:
-    for name, low, high in BUCKETS:
-        if value >= low and (high is None or value <= high):
-            return name
-    raise ValueError(f"Cannot bucket value: {value}")
-
-
-def load_jsonl(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-
-    rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            rows.append(json.loads(line))
-    return rows
-
-
-def append_jsonl(path: Path, row: dict) -> None:
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def index_rows(rows: list[dict], key: str = "index") -> dict[int, dict]:
-    return {int(row[key]): row for row in rows}
-
-
-def resolve_image_path(path: str, data_root: Path) -> Path:
-    image_path = Path(path)
-    if image_path.exists():
-        return image_path
-
-    if image_path.is_absolute() and image_path.parts[1:2] == ("data",):
-        image_path = data_root / Path(*image_path.parts[2:])
-    elif not image_path.is_absolute():
-        image_path = data_root / image_path
-
-    if not image_path.exists():
-        raise FileNotFoundError(f"Image not found: {path}")
-
-    return image_path
-
-
-def load_test_building_count(annotation_path: Path, data_root: Path) -> list[TestSample]:
-    with annotation_path.open("r", encoding="utf-8") as f:
-        records = json.load(f)
-
-    samples: list[TestSample] = []
-    for record in records:
-        image_a, image_b = record["images"]
-        samples.append(
-            TestSample(
-                image_a=str(resolve_image_path(image_a, data_root)),
-                image_b=str(resolve_image_path(image_b, data_root)),
-                answer=str(record["conversations"][1]["value"]).strip(),
-            )
-        )
-    return samples
-
-
-def parse_first_int(text: str) -> int | None:
-    match = re.search(r"-?\d+", text)
-    if match is None:
-        return None
-    return int(match.group(0))
 
 
 def split_into_grid(
@@ -143,57 +64,6 @@ def split_into_grid(
     return patches
 
 
-def build_single_image_prompt(processor, image: Image.Image, question: str) -> str:
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": question},
-            ],
-        }
-    ]
-    return processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-
-def move_to_model_device(inputs: dict, model) -> dict:
-    return {
-        key: value.to(model.device) if torch.is_tensor(value) else value
-        for key, value in inputs.items()
-    }
-
-
-def first_token_id(token_id) -> int | None:
-    if isinstance(token_id, (list, tuple)):
-        return token_id[0] if token_id else None
-    return token_id
-
-
-def configure_generation_tokens(model, processor) -> int | None:
-    tokenizer = getattr(processor, "tokenizer", None)
-    pad_token_id = getattr(tokenizer, "pad_token_id", None)
-    eos_token_id = getattr(tokenizer, "eos_token_id", None)
-
-    if pad_token_id is None:
-        pad_token_id = first_token_id(eos_token_id)
-
-    if pad_token_id is None:
-        pad_token_id = first_token_id(
-            getattr(model.generation_config, "eos_token_id", None)
-        )
-
-    if pad_token_id is not None:
-        model.generation_config.pad_token_id = pad_token_id
-        if hasattr(model, "config"):
-            model.config.pad_token_id = pad_token_id
-
-    return pad_token_id
-
-
 def infer_single_image_batch(
     model,
     processor,
@@ -204,7 +74,7 @@ def infer_single_image_batch(
     if not images:
         return []
 
-    texts = [build_single_image_prompt(processor, image, question) for image in images]
+    texts = [build_prompt_with_images(processor, [image], question) for image in images]
     inputs = processor(
         text=texts,
         images=images,
@@ -337,14 +207,9 @@ def infer_patch_pair_delta(
     }
 
 
-def batched(items: list[tuple[int, TestSample]], batch_size: int):
-    for start in range(0, len(items), batch_size):
-        yield items[start : start + batch_size]
-
-
 @hydra.main(version_base=None, config_path="configs", config_name="patch_level")
 def main(cfg: DictConfig) -> None:
-    suppress_noisy_logs()
+    suppress_http_logs()
 
     data_root = repo_path(cfg.data.root)
     annotation_path = repo_path(cfg.data.annotation_path)

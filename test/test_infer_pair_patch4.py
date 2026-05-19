@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-import logging
-import re
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -14,8 +13,19 @@ from transformers import (
     logging as transformers_logging,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from util import (
+    build_prompt_with_images,
+    configure_generation_tokens,
+    move_to_model_device,
+    parse_first_int,
+    repo_path,
+    resolve_image_path,
+    suppress_http_logs,
+)
 
 
 # Test-only defaults. All paths are resolved from the repository root.
@@ -36,65 +46,6 @@ PATCH_PROMPT = (
 
 
 transformers_logging.set_verbosity_error()
-
-
-def suppress_noisy_logs() -> None:
-    for logger_name in ("httpx", "httpcore", "huggingface_hub"):
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-
-def parse_first_int(text: str) -> int | None:
-    match = re.search(r"-?\d+", text)
-    if match is None:
-        return None
-    return int(match.group(0))
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
-
-
-def first_token_id(token_id) -> int | None:
-    if isinstance(token_id, (list, tuple)):
-        return token_id[0] if token_id else None
-    return token_id
-
-
-def configure_generation_tokens(model, processor) -> None:
-    tokenizer = getattr(processor, "tokenizer", None)
-    pad_token_id = getattr(tokenizer, "pad_token_id", None)
-    eos_token_id = getattr(tokenizer, "eos_token_id", None)
-
-    if pad_token_id is None:
-        pad_token_id = first_token_id(eos_token_id)
-    if pad_token_id is None:
-        pad_token_id = first_token_id(
-            getattr(model.generation_config, "eos_token_id", None)
-        )
-
-    if pad_token_id is not None:
-        model.generation_config.pad_token_id = pad_token_id
-        if hasattr(model, "config"):
-            model.config.pad_token_id = pad_token_id
-
-
-def resolve_image_path(raw_path: str, data_root: Path) -> Path:
-    image_path = Path(raw_path)
-    if image_path.exists():
-        return image_path
-
-    if image_path.is_absolute() and image_path.parts[1:2] == ("data",):
-        image_path = data_root / Path(*image_path.parts[2:])
-    elif not image_path.is_absolute():
-        image_path = data_root / image_path
-
-    if not image_path.exists():
-        raise FileNotFoundError(f"Image not found: {raw_path}")
-
-    return image_path
 
 
 def load_record(annotation_path: Path, index: int) -> dict:
@@ -127,40 +78,20 @@ def split_into_4_patches(image: Image.Image) -> list[tuple[int, tuple[int, int, 
     return patches
 
 
-def build_single_image_prompt(processor, image: Image.Image, question: str) -> str:
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": question},
-            ],
-        }
-    ]
-    return processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-
 def infer_patch_count(
     model,
     processor,
     image_patch: Image.Image,
     question: str,
 ) -> tuple[str, int | None]:
-    prompt = build_single_image_prompt(processor, image_patch, question)
+    prompt = build_prompt_with_images(processor, [image_patch], question)
     inputs = processor(
         text=[prompt],
         images=[image_patch],
         return_tensors="pt",
         padding=True,
     )
-    inputs = {
-        key: value.to(model.device) if torch.is_tensor(value) else value
-        for key, value in inputs.items()
-    }
+    inputs = move_to_model_device(inputs, model)
     input_length = inputs["input_ids"].shape[-1] if "input_ids" in inputs else 0
 
     with torch.no_grad():
@@ -229,7 +160,7 @@ def save_patch_figure(
 
 
 def main() -> None:
-    suppress_noisy_logs()
+    suppress_http_logs()
     annotation_path = repo_path(ANNOTATION_PATH)
     data_root = repo_path(LOCAL_DATA_ROOT)
     vis_save_path = repo_path(VIS_SAVE_PATH)

@@ -1,9 +1,22 @@
 from __future__ import annotations
+
 import csv
+import sys
 from pathlib import Path
+
 import hydra
 from omegaconf import DictConfig
-from common import *
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from util import (
+    BUCKETS,
+    PREDICTION_FIELDNAMES,
+    load_jsonl,
+    repo_path,
+)
 
 # JSONL 예측 결과를 불러온 뒤 index 기준으로 정렬
 def load_predictions(path: Path) -> list[dict]:

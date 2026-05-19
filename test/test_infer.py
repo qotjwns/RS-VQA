@@ -1,16 +1,26 @@
+import sys
 from pathlib import Path
 
 import torch
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForImageTextToText
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
-# 경로 설정
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
-IMAGE_PATH = REPO_ROOT / "test/test.png"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from util import (
+    build_prompt_with_images,
+    configure_generation_tokens,
+    move_to_model_device,
+    repo_path,
+    suppress_http_logs,
+)
+
+MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
+IMAGE_PATH = repo_path("test/test.png")
 PROMPT = "Describe this image in detail."
 
-# CUDA 확인
 print("CUDA available:", torch.cuda.is_available())
 print("PyTorch:", torch.__version__)
 
@@ -18,6 +28,8 @@ if torch.cuda.is_available():
     print("GPU name:", torch.cuda.get_device_name(0))
 else:
     raise RuntimeError("CUDA GPU is not available.")
+
+suppress_http_logs()
 
 print("Loading processor...")
 processor = AutoProcessor.from_pretrained(
@@ -32,39 +44,20 @@ model = AutoModelForImageTextToText.from_pretrained(
     device_map="auto",
     trust_remote_code=True,
 ).eval()
+configure_generation_tokens(model, processor)
 
 print("Model loaded.")
 print("Model device:", model.device)
 
-# 이미지 로드
 image = Image.open(IMAGE_PATH).convert("RGB")
-
-messages = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image", "image": image},
-            {"type": "text", "text": PROMPT},
-        ],
-    }
-]
-
-text = processor.apply_chat_template(
-    messages,
-    tokenize=False,
-    add_generation_prompt=True,
-)
+text = build_prompt_with_images(processor, [image], PROMPT)
 
 inputs = processor(
     text=[text],
     images=[image],
     return_tensors="pt",
 )
-
-inputs = {
-    k: v.to(model.device) if torch.is_tensor(v) else v
-    for k, v in inputs.items()
-}
+inputs = move_to_model_device(inputs, model)
 
 print("Running inference...")
 

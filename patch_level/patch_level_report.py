@@ -4,22 +4,19 @@ import csv
 import json
 import logging
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BUCKETS = [
-    ("0", 0, 0),
-    ("1", 1, 1),
-    ("2-5", 2, 5),
-    ("6-10", 6, 10),
-    ("11-20", 11, 20),
-    ("21+", 21, None),
-]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from util import BUCKETS, load_jsonl, repo_path
+
 
 PREFERRED_FIELDNAMES = [
     "index",
@@ -42,24 +39,6 @@ PREFERRED_FIELDNAMES = [
     "sum_abs_diff",
     "patch_outputs",
 ]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path)
-    if path.is_absolute():
-        return path
-    return REPO_ROOT / path
-
-
-def load_jsonl(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-
-    rows: list[dict] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            rows.append(json.loads(line))
-    return rows
 
 
 def load_predictions(path: Path) -> list[dict]:
@@ -218,7 +197,7 @@ def draw_bucket_plot(path: Path, summary: list[dict], title: str) -> None:
         axes[0].text(
             index,
             min(accuracy + 2, 97),
-            f"{accuracy:.0f}%\\n(n={count})",
+            f"{accuracy:.0f}\\n(n={count})",
             ha="center",
             va="bottom",
         )

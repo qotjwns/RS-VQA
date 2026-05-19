@@ -9,7 +9,6 @@ RS-VQA/
 ├── baseline/
 │   ├── baseline_infer.py       # count_build test split 추론, JSONL 저장
 │   ├── baseline_report.py      # JSONL 결과를 CSV/PNG 리포트로 변환
-│   ├── common.py               # baseline 공통 유틸 (경로/버킷/JSONL I/O)
 │   └── configs/
 │       ├── baseline.yaml       # Hydra 공통 설정
 │       └── model/
@@ -25,6 +24,7 @@ RS-VQA/
 ├── model/
 │   ├── download_internVL.py    # InternVL 모델 다운로드
 │   └── download_Qwen.py        # Qwen 모델 다운로드
+├── util/                       # baseline/patch-level 공통 유틸 패키지
 ├── data/                       # 로컬 데이터셋(LEVIR-MCI)
 ├── outputs/                    # 추론/평가 결과
 ├── test/
