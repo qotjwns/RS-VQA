@@ -29,7 +29,7 @@ from util import (
 
 
 # Test-only defaults. All paths are resolved from the repository root.
-MODEL_ID = "OpenGVLab/InternVL3_5-38B-HF"
+MODEL_ID = "OpenGVLab/InternVL3_5-1B-HF"
 SAMPLE_INDEX = 300
 MAX_NEW_TOKENS = 128
 ANNOTATION_PATH = Path(
@@ -38,7 +38,9 @@ ANNOTATION_PATH = Path(
 LOCAL_DATA_ROOT = Path("data")
 VIS_SAVE_PATH = Path("outputs/patch_debug/test_infer_pair_patch4.png")
 
-PATCH_GRID = 2  # 2x2 => 4 patches
+# Number of splits per side. Total patches = PATCH_GRID * PATCH_GRID.
+# e.g., 2 -> 4 patches, 4 -> 16 patches.
+PATCH_GRID = 2
 PATCH_PROMPT = (
     "How many buildings are visible in this remote sensing image? "
     "Answer with only one integer."
@@ -57,17 +59,21 @@ def load_record(annotation_path: Path, index: int) -> dict:
     return records[index]
 
 
-def split_into_4_patches(image: Image.Image) -> list[tuple[int, tuple[int, int, int, int], Image.Image]]:
+def split_into_grid_patches(
+    image: Image.Image,
+    patch_grid: int,
+) -> list[tuple[int, tuple[int, int, int, int], Image.Image]]:
+    if patch_grid < 1:
+        raise ValueError(f"PATCH_GRID must be >= 1, got {patch_grid}")
+
     width, height = image.size
-    mid_x = width // PATCH_GRID
-    mid_y = height // PATCH_GRID
-    x_edges = [0, mid_x, width]
-    y_edges = [0, mid_y, height]
+    x_edges = [int(width * index / patch_grid) for index in range(patch_grid + 1)]
+    y_edges = [int(height * index / patch_grid) for index in range(patch_grid + 1)]
 
     patches: list[tuple[int, tuple[int, int, int, int], Image.Image]] = []
     patch_id = 0
-    for row in range(PATCH_GRID):
-        for col in range(PATCH_GRID):
+    for row in range(patch_grid):
+        for col in range(patch_grid):
             left = x_edges[col]
             top = y_edges[row]
             right = x_edges[col + 1]
@@ -122,9 +128,9 @@ def save_patch_figure(
     gt: int | None,
     save_path: Path,
     sample_index: int,
-) -> None:
+) -> tuple[Path, Path]:
     if not patch_results:
-        return
+        return save_path.with_suffix(".png"), save_path.with_suffix(".svg")
 
     save_path.parent.mkdir(parents=True, exist_ok=True)
     rows = len(patch_results)
@@ -140,23 +146,33 @@ def save_patch_figure(
         ax_b.axis("off")
 
         ax_a.set_title(
-            f"A patch {result['patch_id']}\n"
-            f"pred={result['pred_a']} | raw='{short_text(result['raw_a'])}'",
+            f"A patch {result['patch_id'] + 1}\n"
+            f"pred={result['pred_a']}",
             fontsize=10,
         )
         ax_b.set_title(
-            f"B patch {result['patch_id']}\n"
+            f"B patch {result['patch_id'] + 1}\n"
             f"pred={result['pred_b']} | diff(B-A)={result['diff']}",
             fontsize=10,
         )
 
     fig.suptitle(
-        f"Patch-wise Building Count (sample={sample_index}, gt_changed={gt})",
+        f"Patch-wise Building Count (sample index: {sample_index}, gt_changed={gt})",
         fontsize=13,
     )
     fig.tight_layout(rect=[0, 0, 1, 0.96])
-    fig.savefig(save_path, dpi=200)
+
+    if save_path.suffix.lower() == ".svg":
+        svg_path = save_path
+        png_path = save_path.with_suffix(".png")
+    else:
+        png_path = save_path
+        svg_path = save_path.with_suffix(".svg")
+
+    fig.savefig(png_path, dpi=200)
+    fig.savefig(svg_path, format="svg")
     plt.close(fig)
+    return png_path, svg_path
 
 
 def main() -> None:
@@ -197,8 +213,8 @@ def main() -> None:
     ).eval()
     configure_generation_tokens(model, processor)
 
-    patches_a = split_into_4_patches(image_a)
-    patches_b = split_into_4_patches(image_b)
+    patches_a = split_into_grid_patches(image_a, PATCH_GRID)
+    patches_b = split_into_grid_patches(image_b, PATCH_GRID)
 
     print("\n===== PATCH-WISE BUILDING COUNT (A vs B) =====")
     sum_a = 0
@@ -265,13 +281,14 @@ def main() -> None:
     print(f"valid_patch_pairs: {valid_pairs}/{PATCH_GRID * PATCH_GRID}")
     print("note: patch-based aggregate is heuristic and may not exactly match GT change count.")
 
-    save_patch_figure(
+    png_path, svg_path = save_patch_figure(
         patch_results=patch_results,
         gt=gt,
         save_path=vis_save_path,
         sample_index=SAMPLE_INDEX,
     )
-    print(f"saved visualization: {vis_save_path}")
+    print(f"saved visualization (png): {png_path}")
+    print(f"saved visualization (svg): {svg_path}")
 
 
 if __name__ == "__main__":

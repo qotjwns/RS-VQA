@@ -52,7 +52,7 @@ def load_record(annotation_path: Path, index: int) -> dict:
         records = json.load(f)
 
     if index < 0 or index >= len(records):
-        raise IndexError(f"SAMPLE_INDEX {index} out of range (total={len(records)})")
+        raise IndexError(f"SAMPLE_INDEX: {index} out of range (total={len(records)})")
     return records[index]
 
 
@@ -71,7 +71,7 @@ def save_pair_figure(
     sample_index: int,
     gt: int | None,
     pred: int | None,
-) -> None:
+) -> tuple[Path, Path]:
     save_path.parent.mkdir(parents=True, exist_ok=True)
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     axes[0].imshow(image_a)
@@ -82,8 +82,18 @@ def save_pair_figure(
     axes[1].axis("off")
     fig.suptitle(f"sample={sample_index} | GT={gt} | PRED={pred}", fontsize=13)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
-    fig.savefig(save_path, dpi=200)
+
+    if save_path.suffix.lower() == ".svg":
+        svg_path = save_path
+        png_path = save_path.with_suffix(".png")
+    else:
+        png_path = save_path
+        svg_path = save_path.with_suffix(".svg")
+
+    fig.savefig(png_path, dpi=200)
+    fig.savefig(svg_path, format="svg")
     plt.close(fig)
+    return png_path, svg_path
 
 
 def main() -> None:
@@ -164,7 +174,7 @@ def main() -> None:
     print(raw_output)
     print(f"pred(parsed): {pred}")
 
-    save_pair_figure(
+    png_path, svg_path = save_pair_figure(
         image_a=image_a,
         image_b=image_b,
         save_path=vis_save_path,
@@ -172,7 +182,8 @@ def main() -> None:
         gt=gt,
         pred=pred,
     )
-    print(f"saved visualization: {vis_save_path}")
+    print(f"saved visualization (png): {png_path}")
+    print(f"saved visualization (svg): {svg_path}")
 
 
 if __name__ == "__main__":
