@@ -119,6 +119,34 @@ outputs/building_count_test/
 
 `test_predictions.jsonl`은 resume 기준 파일입니다. `inference.resume=true`이면 이미 저장된 `index`는 건너뛰고 이어서 추론합니다.
 
+## Segmentation Evidence 시각화
+
+`outputs/segmentation_evidence/segmentation_derived_counts.jsonl` 기반으로
+overview plot과 샘플별 mask overlay figure를 생성합니다.
+`label_rgb`가 있을 경우 빨간색(빌딩) 픽셀만 foreground로 사용하고,
+`label`(흑백)과 교집합이 존재하면 교집합을 우선 사용합니다.
+또한 시각화 시에는 JSONL의 기존 count 값을 그대로 쓰지 않고 마스크에서 component를 다시 계산합니다.
+
+```bash
+python3 patch_level/segmentation_visualize.py \
+  --seg-jsonl outputs/segmentation_evidence/segmentation_derived_counts.jsonl \
+  --topk-samples 8
+```
+
+patch-level 예측 결과와 같이 비교하려면:
+
+```bash
+python3 patch_level/segmentation_visualize.py \
+  --seg-jsonl outputs/segmentation_evidence/segmentation_derived_counts.jsonl \
+  --prediction-jsonl outputs/patch_level_building_count_test/internvl3_5_8b/test_predictions.jsonl \
+  --topk-samples 8
+```
+
+출력:
+
+- `outputs/segmentation_evidence/segmentation_evidence_overview.png` (+ `.svg`)
+- `outputs/segmentation_evidence/top_error_samples/sample_XXXX.png` (+ `.svg`)
+
 ## Patch-level 빌딩 변화 개수 평가
 
 patch-level 파이프라인도 같은 test split(`count_build.json`)을 사용합니다.
